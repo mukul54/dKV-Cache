@@ -115,7 +115,7 @@ class DKVCacheLLaDA(LM):
         self.temperature = temperature
         self.cfg_scale = cfg_scale
         self._batch_size = int(batch_size)
-        self.device = device
+        self._device = device
         self.mask_id = mask_id
         self.add_bos_token = add_bos_token
 
@@ -153,14 +153,19 @@ class DKVCacheLLaDA(LM):
     def batch_size(self):
         return self._batch_size
 
+    # `lm_eval.api.model.LM` declares `device` read-only, so shadow it here.
+    @property
+    def device(self):
+        return self._device
+
     @property
     def tokenizer_name(self):
         return self.tokenizer.name_or_path.replace("/", "__")
 
-    def chat_template(self, chat_template=True):
+    def chat_template(self, chat_template=False):
         if chat_template:
             return self.tokenizer.chat_template
-        return None
+        return ""
 
     def apply_chat_template(self, chat_history, add_generation_prompt=True):
         return self.tokenizer.apply_chat_template(
