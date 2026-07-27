@@ -134,6 +134,62 @@ CUDA_VISIBLE_DEVICES=0 python llada_generate.py --decode --cache-steps 8
 CUDA_VISIBLE_DEVICES=0 python llada_generate.py --greedy --sampling-alg random --cache-steps 2 --window-size 4
 ```
 
+### Benchmarking (accuracy / throughput / tokens-per-step)
+
+`eval/eval_dkv_llada.py` runs dKV-Cache through
+[lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) and
+reports accuracy, decoding throughput and tokens-per-step in one pass.
+
+```
+pip install "transformers==4.46.3" "lm_eval>=0.4.5" datasets accelerate
+```
+
+GSM8K at generation length 512 on LLaDA-1.5, using the paper's configuration for
+dKV-Cache-Decode (low-confidence remasking, `T = L`, block length 32, cache
+refresh interval 8):
+
+```
+CUDA_VISIBLE_DEVICES=0 python eval/eval_dkv_llada.py \
+    --model_path GSAI-ML/LLaDA-1.5 \
+    --variant decode \
+    --gen_length 512 --steps 512 --block_length 32 --cache_steps 8 \
+    --remasking low_confidence \
+    --tasks gsm8k --num_fewshot 5 --batch_size 16 \
+    --output_dir results/gsm8k_512_dkv_decode_r8
+```
+
+`eval/run_gsm8k_512.sh` runs that configuration plus the no-cache reference, the
+refresh-interval sweep (4 / 8 / 16), the half-step setting and dKV-Cache-Greedy.
+
+Where the configuration comes from (arXiv:2505.15781):
+
+| Setting | Value | Source |
+| --- | --- | --- |
+| Variant | dKV-Cache-Decode | §4.2: best accuracy/speed trade-off; the paper concentrates on it |
+| Remasking | `low_confidence` | Table 1, "confidence" columns |
+| Steps `T` | `T = L = 512` | Table 5, base config uses `T = L` for LLaDA |
+| Block length `B` | 32 | Table 5: GSM8K uses `B=32`; both `L=512` tasks (HumanEval, MBPP) also use `B=32` |
+| Cache refresh | 8 | Table 1 caption, Table 5 |
+| Temperature / CFG | 0.0 / 0.0 | reference LLaDA scripts |
+| dKV-Cache-Greedy | refresh 2, window 4, random remasking | Table 1 and Table 5 |
+
+Metrics written to `<output_dir>/metrics.json`:
+
+* `throughput_tok_s_aggregate` — generated tokens across the batch / wall time.
+* `throughput_tok_s_per_sequence` — per-sequence rate (the batch-size-1 style
+  number). Pick whichever matches the protocol you are comparing against and
+  keep it consistent across methods.
+* The `_full` variants count all `gen_length` positions; the others stop at the
+  first `<eos>`.
+* `tokens_per_step` — `gen_length / NFE`, where NFEs are counted with a forward
+  hook rather than assumed from the step count.
+
+Note on `low_confidence` remasking: the reference code builds a full
+`(B, L, V)` float64 softmax every denoising step, which is ~21 GB per step at
+batch size 16 and OOMs before the cache is exercised. `generation_utils/confidence.py`
+computes the identical quantity chunk-wise with `logsumexp`; pass
+`--legacy_confidence` to restore the original code path.
+
 ### Result
 We test our methods on LLaDA-8B-Instruct and Dream-Base-7B on the benchmark. Here are the results for the algorithm.
 
