@@ -30,7 +30,15 @@ import argparse
 import inspect
 import json
 import os
+import sys
 import time
+
+# Allow `python eval/eval_dkv_llada.py` from the repo root: Python puts the
+# script's own directory on sys.path, not the working directory, so the
+# `models` / `generation_utils` packages would otherwise be invisible.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 import numpy as np
 import torch
